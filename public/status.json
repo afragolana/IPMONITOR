@@ -1,0 +1,7 @@
+{
+ "generated_at": "1970-01-01T00:00:00+00:00",
+ "slow_threshold_s": 3.0,
+ "summary": { "up": 0, "slow": 0, "fail": 0, "total": 0 },
+ "current": [],
+ "history": []
+}

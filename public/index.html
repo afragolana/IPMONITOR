@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>URL Monitor Dashboard</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171d2b; --panel2:#1e2536; --border:#2a3350;
+    --text:#e8ecf5; --muted:#8b97b5;
+    --up:#2ecc71; --slow:#f1c40f; --fail:#e74c3c; --none:#2a3350;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:14px}
+  header{padding:18px 24px;border-bottom:1px solid var(--border);
+         display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         background:var(--panel)}
+  header h1{font-size:18px;margin:0;font-weight:600}
+  .sub{color:var(--muted);font-size:12px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+        border-radius:20px;background:var(--panel2);font-size:12px;font-weight:600}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.up{background:var(--up)} .dot.slow{background:var(--slow)}
+  .dot.fail{background:var(--fail)}
+  .summary{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+  main{padding:16px 24px;display:flex;flex-direction:column;gap:10px}
+  .row{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+       padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+  .row-head{display:flex;align-items:center;gap:12px}
+  .status-dot{width:14px;height:14px;border-radius:50%;flex:none}
+  .status-dot.up{background:var(--up)} .status-dot.slow{background:var(--slow)}
+  .status-dot.fail{background:var(--fail)}
+  .host{font-weight:600;font-size:14px}
+  .url{color:var(--muted);font-size:11px;word-break:break-all}
+  .meta{margin-left:auto;text-align:right;font-size:12px;color:var(--muted);white-space:nowrap}
+  .meta b{color:var(--text)}
+  .uptime{display:flex;flex-direction:column;align-items:flex-end;gap:1px;min-width:84px;white-space:nowrap;margin-left:18px}
+  .uptime .pct{font-size:17px;font-weight:700;line-height:1}
+  .uptime .pct.good{color:var(--up)} .uptime .pct.warn{color:var(--slow)} .uptime .pct.bad{color:var(--fail)}
+  .uptime .lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .timeline{display:flex;align-items:center;gap:6px}
+  .seg{display:flex;gap:2px}
+  .cell{width:11px;height:22px;border-radius:2px;background:var(--none);flex:none}
+  .cell.up{background:var(--up)} .cell.slow{background:var(--slow)}
+  .cell.fail{background:var(--fail)}
+  .seg.recent .cell{width:16px;height:22px;border-radius:3px}
+  .divider{width:1px;height:22px;background:var(--border);margin:0 4px}
+  .seg-label{font-size:10px;color:var(--muted);margin-bottom:2px;text-transform:uppercase;letter-spacing:.5px}
+  .legend{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:12px}
+  .legend .cell{width:12px;height:12px}
+  footer{padding:12px 24px;color:var(--muted);font-size:11px;border-top:1px solid var(--border)}
+  .empty{color:var(--muted);text-align:center;padding:40px}
+  .tl-wrap{display:flex;flex-direction:column}
+  .tl-labels{display:flex;gap:6px;align-items:flex-end}
+  .lbl23{flex:none}
+  .lblrecent{flex:none}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🔵 URL Monitor Dashboard</h1>
+    <div class="sub" id="gen">Caricamento…</div>
+  </div>
+  <div class="summary" id="summary"></div>
+</header>
+
+<main id="rows"><div class="empty">Caricamento dati…</div></main>
+
+<footer>
+  <div class="legend">
+    <span><span class="cell up"></span> OK</span>
+    <span><span class="cell slow"></span> Lento (&gt;<span id="thr">3</span>s)</span>
+    <span><span class="cell fail"></span> Failure</span>
+    <span><span class="cell"></span> Nessun dato</span>
+    <span style="margin-left:auto">Timeline: 23 ore (oraria) + ultima ora (ogni 15 min). % uptime = check non-failure nelle 24h. Auto-refresh 60s.</span>
+  </div>
+</footer>
+
+<script>
+const RECENT_SLOTS = 4;     // ultima ora: 4 slot da 15 min
+const HOURLY_SLOTS = 23;    // 23 ore precedenti
+const CLS = {UP:'up', SLOW:'slow', FAIL:'fail'};
+// priorita' peggiore per aggregazione: FAIL > SLOW > UP
+const RANK = {FAIL:3, SLOW:2, UP:1};
+
+function worst(statuses){
+  let best=null, r=0;
+  for(const s of statuses){ if(RANK[s]>r){r=RANK[s]; best=s;} }
+  return best;
+}
+
+function fmtAge(ms){
+  if(ms==null) return '—';
+  return ms<1000 ? ms+'ms' : (ms/1000).toFixed(2)+'s';
+}
+
+// % uptime nelle ultime 24h: UP e SLOW contano come "su", solo FAIL abbassa.
+function uptimePct(records, nowMs){
+  const cutoff = nowMs - 24*3600*1000;
+  const win = records.filter(r=> r.ts*1000 >= cutoff);
+  if(!win.length) return null;
+  const ok = win.filter(r=> r.status!=='FAIL').length;
+  return (ok/win.length)*100;
+}
+function uptimeClass(p){
+  if(p==null) return '';
+  if(p>=99) return 'good';
+  if(p>=95) return 'warn';
+  return 'bad';
+}
+
+function buildTimeline(history, nowMs){
+  const recent = new Array(RECENT_SLOTS).fill(null);
+  const hourly = new Array(HOURLY_SLOTS).fill(null);
+  for(let i=0;i<RECENT_SLOTS;i++){
+    const end   = nowMs - i*15*60*1000;
+    const start = end - 15*60*1000;
+    const inBucket = history.filter(r=> r.ts*1000>start && r.ts*1000<=end).map(r=>r.status);
+    recent[RECENT_SLOTS-1-i] = inBucket.length ? worst(inBucket) : null;
+  }
+  const recentStart = nowMs - RECENT_SLOTS*15*60*1000;
+  for(let i=0;i<HOURLY_SLOTS;i++){
+    const end   = recentStart - i*3600*1000;
+    const start = end - 3600*1000;
+    const inBucket = history.filter(r=> r.ts*1000>start && r.ts*1000<=end).map(r=>r.status);
+    hourly[HOURLY_SLOTS-1-i] = inBucket.length ? worst(inBucket) : null;
+  }
+  return {hourly, recent};
+}
+
+function cell(status){
+  const d=document.createElement('div');
+  d.className='cell'+(status?(' '+CLS[status]):'');
+  d.title = status ? status : 'nessun dato';
+  return d;
+}
+
+async function load(){
+  let data;
+  try{
+    const res = await fetch('status.json?_='+Date.now());
+    data = await res.json();
+  }catch(e){
+    document.getElementById('rows').innerHTML =
+      '<div class="empty">⚠️ Impossibile leggere <b>status.json</b>.<br>Esegui prima <b>monitor.py</b> almeno una volta.</div>';
+    return;
+  }
+
+  const nowMs = Date.now();
+  document.getElementById('gen').textContent =
+    'Ultimo aggiornamento: ' + new Date(data.generated_at).toLocaleString('it-IT');
+  document.getElementById('thr').textContent = data.slow_threshold_s;
+
+  const s = data.summary;
+  document.getElementById('summary').innerHTML =
+    `<span class="pill"><span class="dot up"></span>${s.up} OK</span>`+
+    `<span class="pill"><span class="dot slow"></span>${s.slow} Lenti</span>`+
+    `<span class="pill"><span class="dot fail"></span>${s.fail} Down</span>`;
+
+  const byUrl = {};
+  (data.history||[]).forEach(r=>{ (byUrl[r.url]=byUrl[r.url]||[]).push(r); });
+
+  const rows = document.getElementById('rows');
+  rows.innerHTML='';
+  data.current.forEach(cur=>{
+    const recs = byUrl[cur.url]||[];
+    const tl = buildTimeline(recs, nowMs);
+    const pct = uptimePct(recs, nowMs);
+
+    const row=document.createElement('div'); row.className='row';
+
+    const head=document.createElement('div'); head.className='row-head';
+    head.innerHTML =
+      `<div class="status-dot ${CLS[cur.status]}"></div>`+
+      `<div><div class="host">${cur.host}</div><div class="url">${cur.url}</div></div>`+
+      `<div class="meta"><b>${cur.code??'—'}</b> · ${fmtAge(cur.ms)}`+
+      (cur.error?`<br><span style="color:var(--fail)">${cur.error}</span>`:'')+`</div>`+
+      `<div class="uptime"><span class="pct ${uptimeClass(pct)}">`+
+      (pct==null?'—':pct.toFixed(pct>=99.95?0:1)+'%')+`</span>`+
+      `<span class="lbl">uptime 24h</span></div>`;
+    row.appendChild(head);
+
+    const wrap=document.createElement('div'); wrap.className='tl-wrap';
+    const labels=document.createElement('div'); labels.className='tl-labels';
+    labels.innerHTML=`<div class="seg-label lbl23">— 23 ore fa → 1 ora fa —</div>`+
+                     `<div style="width:9px"></div>`+
+                     `<div class="seg-label lblrecent">ultima ora (15′)</div>`;
+    const timeline=document.createElement('div'); timeline.className='timeline';
+
+    const seg23=document.createElement('div'); seg23.className='seg hourly';
+    tl.hourly.forEach(st=> seg23.appendChild(cell(st)));
+
+    const div=document.createElement('div'); div.className='divider';
+
+    const segR=document.createElement('div'); segR.className='seg recent';
+    tl.recent.forEach(st=> segR.appendChild(cell(st)));
+
+    timeline.appendChild(seg23);
+    timeline.appendChild(div);
+    timeline.appendChild(segR);
+    wrap.appendChild(labels);
+    wrap.appendChild(timeline);
+    row.appendChild(wrap);
+    rows.appendChild(row);
+  });
+}
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

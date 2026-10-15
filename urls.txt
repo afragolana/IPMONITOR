@@ -1,0 +1,21 @@
+# URL da monitorare — una per riga. Le righe che iniziano con # sono commenti.
+#
+# ATTENZIONE: GitHub Actions gira su cloud PUBBLICO. Inserisci qui SOLO URL
+# pubbliche (raggiungibili senza VPN/rete aziendale). Le URL interne
+# (.sidi.mpi.it, miurjb*.pubblica.istruzione.it, ...) risulterebbero sempre
+# rosse perche' il runner non e' nella rete MIUR.
+#
+# Verifica ciascuna URL dal telefono/rete pubblica (senza VPN): se si apre nel
+# browser, allora e' pubblica e puoi lasciarla qui. Altrimenti commentala.
+
+# --- Candidate pubbliche (verifica e scommenta quelle che si aprono senza VPN) ---
+https://unica.istruzione.gov.it/iol-services/test
+http://www.mim.gov.it/web/guest/home
+https://wsmiur.pubblica.istruzione.it/crowdfunding-wsanagrafescuole/private/api/v1/anagrafeScuole/datiScuola/RMIC83100G/202526
+
+# --- Quasi certamente INTERNE: lasciate commentate (il cloud non le vede) ---
+# http://mvlas007.sidi.mpi.it:8180/PDGF/public/cartadocWS/verificaEnteServizi?wsdl
+# https://miurjb5.pubblica.istruzione.it/iol-services/test
+# https://miurjb3.pubblica.istruzione.it/ServiziMLPSWSSec/about
+# https://miurjb3.pubblica.istruzione.it/FatturazioneBilancioWS/services/FatturazioneBilancioService?wsdl
+# http://wscartadocentestress.sidi.mpi.it/wscartadocente/cartadocenteservice?wsdl
